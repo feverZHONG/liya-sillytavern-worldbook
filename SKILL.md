@@ -8,6 +8,7 @@ description: SillyTavern 世界书（Lorebook/character_book）机制——触�
 
 > 2026-09-16 从 `sillytavern-cards` 拆出来的独立线：卡是「一个人」，世界书是「一个世界」——
 > 书的形状、触发条件、分发口径都不一样，工具也就该独立。写卡本体（PList/Ali:Chat/格式）仍在 `sillytavern-cards`。
+> **已对外**：<https://github.com/feverZHONG/liya-sillytavern-worldbook>（2026-09-24 建仓，脱敏后发布）
 
 ## 触发
 

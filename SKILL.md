@@ -12,7 +12,7 @@ description: SillyTavern 世界书（Lorebook/character_book）机制——触�
 
 ## 触发
 
-世界书 / lorebook / character_book / 共用世界观 / 触发条件 / 关键词不触发 / 条目不上
+世界书 / lorebook / character_book / 共用世界观 / 触发条件 / 关键词不触发 / 条目不上 / 剧透层 / 私密层 / 知情分流
 
 ## 一、先分清两种书
 
@@ -81,6 +81,8 @@ wb selftest                       # 判定链自测（改代码后必跑）
 
 实测尺度（一个 16 角色项目）：公开层 **13 条**、**0 常驻**、全书约 **1600 token**（单条 90-110 字）——单卡一轮通常只命中 1-3 条（200-700 token），预算安全。
 
+**第二本：剧透层** —— 卡里有一部分设定不能随卡分发（真相／剧透），又要自己能用 → **另起一本独立书、卡不关联、条目级 `characterFilter` 按主题分名单**。工序、order 段位、验收口径（含「名单外必须 0」）→ `references/14-secret-layer.md`。
+
 ## 六、把书挂到卡上（接卡）
 
 独立书建好**不会自动生效**——每张要用它的卡都要写一个字段：
@@ -105,6 +107,7 @@ tavern world --all --set my-world --fix   # 批量写入
 | **机制主档**（1.19.0 源码实证，带行号）：调用链五层 / 判定链 / 匹配 / 扫描源 / 位置 / 预算 / 字段 / 伪代码 / CLI | `references/12-worldbook-mechanics.md` |
 | **机制附档**（非常规路径）：递归 / 包含组·outlet·向量化 / 角色过滤器 / 扫描状态机·时间效果 / 版本复核记录 | `references/12b-mechanics-advanced.md` |
 | **条目设计规范**（动笔前读：靠什么进 / 放哪 / 要不要恒在场 + 硬判据 + 实测记录；**§六 关系层两套架构**＝A 卡内书〔单卡面〕／B 独立关系书〔成套〕，按分发形态选） | `references/13-entry-design.md` |
+| **剧透层（私密层）**：第二本书怎么做——卡不关联的代价／按主题分知情名单／order 段位／分发纪律／验收（名单外必须 0） | `references/14-secret-layer.md` |
 | 引擎实现（判定链 / 模拟器 / 生成器 / 自测） | `scripts/worldbook_tools.py` |
 | **上游发新版后复核机制**（一条命令出差异判定） | `scripts/st-version-diff.py --tag-a X --tag-b Y` |
 | 卡内书的字段位置与写卡侧 | `sillytavern-cards` skill |

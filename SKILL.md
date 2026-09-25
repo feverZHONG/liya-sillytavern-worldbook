@@ -32,12 +32,25 @@ wb ls       <文件...|--all>       # 世界书台账（自动识别卡内书 / 
 wb check    <文件...|--all>       # 触发体检：二级键门槛/通用词主键/跨卡撞车/摆设字段/预算
 wb keys     <文件...|--all>       # 关键词矩阵（谁跟谁撞）
 wb sim      <卡> "文本" [--depth N] [--prev T] [--book 书.json]   # 触发模拟（双书同跑）
-wb new      <清单.json> [--out 书.json]        # 条目清单 → ST 格式独立书
+wb new      <清单.json...> [--out 书.json]     # 条目清单 → ST 格式独立书（可给多份分层清单，合并成一本）
 wb unfilter <卡...> [--fix]       # 去 selective 隐形门槛（二级键分流）
 wb selftest                       # 判定链自测（改代码后必跑）
 ```
 
 `bin/tavern wb ...` 旧写法保留（本机壳，原样转发）。
+
+`ls`／`keys`／`check`／`sim` 全套已适配 **`characterFilter` 分流**：
+
+- `ls` 有「→ 生效卡」列（`全体` 或名单），书级给分流组数
+- `keys` 认分流：同键分流到不同卡判 **`✔ 隔离`**（不会同场触发），`scope` 有交集才算 **`⚠️ 同册／跨卡`**
+- `check` 的撞车只报**真撞车**（隔离的不计）；给 `--card-dir 卡库目录` 还能校验 **`names` 断链**（卡改名即断链，🔴 计入硬问题）
+- `check` 的预算不再拿整册合计吓人：有分流就报「单卡最大 N 条 / X token」，整册合计单独标「不代表单卡注入」
+- `check`／`sim` 名单外条目标 `filtered` 跳过
+- `wb new` 可给**多份清单**（`wb new 世界清单.json 关系清单.json --out 书.json`）——分层维护、合并成一本
+
+判据：**别拿整册合计当单卡注入**（本项目整册 3718 token，单卡实际命中 0-212）。
+
+⚠️ **加选项要改两处**：`bin/wb` 是壳（自己的 argparse ＋ `cmd_*` 转发），引擎在 skill 里——新选项得同时加进壳的参数表、壳的转发、引擎的 parser，三处齐了才算通（这次 `--card-dir` 就是先在壳上撞了一次 unrecognized arguments）。
 
 ## 三、写书前必须知道的硬规则（每条都在源码里核过）
 
@@ -98,6 +111,9 @@ tavern world --all --set my-world --fix   # 批量写入
 
 ## 八、踩坑
 
+- **卡本体 ≠ 只看顶层字段**：PList 在 `data.extensions.depth_prompt.prompt`（`data.depth_prompt` 是空格），`personality`／`scenario`／`mes_example` 生来就是空的（内容进了 PList 与 description）。做四道闸减法（闸①「卡本体已经写了吗」）之前**必须先读 PList**——不然会把「已写」误判成「没写」，反过来把重复内容写进世界书。
+- **卡内书 book 级必带 `extensions: {}`**：V2 规范要求 `character_book` 同时有 `extensions`（对象）与 `entries`（数组）。新建卡内书只写 `entries` 会让官方 validator 判 `data.character_book.extensions/entries` 失败——`tavern verify` 一跑就抓（踩过）。
+- **单字／通用词键要拿真句子试**：`唯` 会撞「唯一」、`姐姐`／`母亲`／`父亲` 会撞任何家庭话题——`wb sim <卡> "句子"` 实测再定；本体角色名当键＝隐性常驻（扫描区每轮带「名字: 」前缀），见 §三 硬判据 1。
 - **中文文件名**：文件名就是关联键，中文名导入后会被转成一串乱码 → `extensions.world` 断链。一律 ASCII。
 - **Python `\w` ≠ JS `\w`**：JS 只认 `[A-Za-z0-9_]`，中文字符算 `\W`。全词匹配边界照搬 `\W` 会让中文关键词与酒馆行为不一致（`wb selftest` 已覆盖）。
 - **正则判定看字符串形状**（`/pattern/flags`），不是看 `use_regex` 开关。

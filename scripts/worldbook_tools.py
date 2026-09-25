@@ -148,6 +148,7 @@ def normalize(entry, index=0):
         "whole_words": ww,
         "group": entry.get("group") or ext.get("group") or "",
         "sticky": entry.get("sticky"), "cooldown": entry.get("cooldown"), "delay": entry.get("delay"),
+        "filter": entry.get("characterFilter"),
         "raw": entry,
     }
 
@@ -199,6 +200,50 @@ def match_keys(haystack, needle, case_sensitive=False, whole_words=False):
         # JS 的 \w 只等于 [A-Za-z0-9_]；Python 的 \w 连中日韩都算，必须手写边界
         return re.search(r"(?:^|[^A-Za-z0-9_])(" + re.escape(nd) + r")(?:$|[^A-Za-z0-9_])", hs) is not None
     return nd in hs
+
+
+def filter_allows(cf, char_key=None, char_tags=()):
+    """characterFilter 分流（world-info.js checkWorldInfo 口径）。
+
+    names 用 **avatar 文件名去扩展名**；tags 对卡 tags。names/tags 都空 = 不过滤（全体生效）。
+    isExclude=false → 只放行名单内；isExclude=true → 排除名单内。
+    """
+    if not cf:
+        return True
+    names = [str(x).strip().lower() for x in (cf.get("names") or [])]
+    tags = [str(x).strip().lower() for x in (cf.get("tags") or [])]
+    if not names and not tags:
+        return True
+    key = str(char_key or "").strip().lower()
+    hit = (bool(key) and key in names) or bool({str(t).lower() for t in char_tags} & set(tags))
+    return (not hit) if cf.get("isExclude") else hit
+
+
+def filter_scope(entry):
+    """条目对哪些卡生效：None=全体（无 filter / 名单为空）；否则返回 scope 集合。
+
+    scope 元素：卡名（names，avatar 文件名去扩展名）或 "tag:xxx"。
+    判断两条条目会不会撞车，看 scope 有没有交集——分流到不同卡的键永远不同场触发。
+    """
+    cf = entry.get("filter") or entry.get("characterFilter")
+    if not cf:
+        return None
+    names = {str(x).strip().lower() for x in (cf.get("names") or [])}
+    tags = {"tag:" + str(x).strip().lower() for x in (cf.get("tags") or [])}
+    if not names and not tags:
+        return None
+    return names | tags
+
+
+def scope_overlap(a, b):
+    """两条条目的生效范围有没有交集（None = 全体，和谁都重叠）。"""
+    if a is None or b is None:
+        return True
+    return bool(a & b)
+
+
+def scope_label(scope):
+    return "全体" if scope is None else "/".join(sorted(scope))
 
 
 def scan_text(messages, depth, char_name=None, user_name=None, include_names=True):
@@ -281,12 +326,17 @@ def cmd_ls(args):
                     print(f"        {k}={book[k]}  ⚠️ 引擎不读（摆设）")
         print(f"  条目 {len(ents)}  常驻 {sum(1 for e in ents if e['constant'])}  "
               f"token 合计 {sum(token_count(e['content']) for e in ents)}")
-        print(f"  {'uid':>4} {'ord':>5} {'pos':<12} {'常':<2} {'sel':<3} {'logic':<8} {'prob':>5}  备注 / 主键")
+        scopes = {scope_label(filter_scope(e)) for e in ents}
+        if scopes != {"全体"}:
+            print(f"  characterFilter 分流 {len(scopes)} 组：{'、'.join(sorted(scopes))[:80]}")
+        print(f"  {'uid':>4} {'ord':>5} {'pos':<12} {'常':<2} {'sel':<3} {'logic':<8} {'prob':>5} "
+              f"{'→ 生效卡':<14}  备注 / 主键")
         for e in ents:
             sel = "是" if e["selective"] and e["keysecondary"] else "—"
             print(f"  {e['uid']:>4} {str(e['order']):>5} {POSITION.get(e['position'], e['position']):<12} "
                   f"{'🔵' if e['constant'] else '  '} {sel:<3} {LOGIC.get(e['logic'], e['logic']):<8} "
-                  f"{e['probability']:>5}  {e['comment'][:22]} | {'/'.join(e['key'])}")
+                  f"{e['probability']:>5}  {scope_label(filter_scope(e)):<14}  {e['comment'][:22]} | "
+                  f"{'/'.join(e['key'])}")
         print()
     return 0
 
@@ -298,14 +348,27 @@ def cmd_keys(args):
             continue
         stem = os.path.splitext(os.path.basename(p))[0]
         for e in entries_of(p):
+            sc = filter_scope(e)
             for k in e["key"]:
-                index.setdefault(k, []).append((stem, e["uid"], e["comment"][:16]))
+                index.setdefault(k, []).append((stem, e["uid"], e["comment"][:16], sc))
     print(f"主键 {len(index)} 个（按跨卡出现数排序）\n")
     for k, uses in sorted(index.items(), key=lambda kv: (-len({u[0] for u in kv[1]}), -len(kv[1]))):
         cards = {u[0] for u in uses}
-        flag = "⚠️ 跨卡" if len(cards) > 1 else ("⚠️ 通用词" if k in GENERIC_KEYS else "   ")
+        # 真撞车：两条 scope 有交集才算——分流到不同卡的同一个键，永远不同场触发
+        real = any(scope_overlap(uses[i][3], uses[j][3])
+                   for i in range(len(uses)) for j in range(i + 1, len(uses)))
+        if real and len(cards) > 1:
+            flag = "⚠️ 跨卡"
+        elif real:
+            flag = "⚠️ 同册"
+        elif len(uses) > 1:
+            flag = "✔ 隔离"
+        elif k in GENERIC_KEYS:
+            flag = "⚠️ 通用词"
+        else:
+            flag = "   "
         print(f"  {flag} {k:<14} 出现在 {len(cards)} 张卡 / {len(uses)} 条："
-              + "、".join(f"{c}#{u}" for c, u, _ in uses))
+              + "、".join(f"{c}#{u}→{scope_label(s)}" for c, u, _, s in uses))
     return 0
 
 
@@ -342,7 +405,7 @@ def cmd_check(args):
                     issues.append(f"🟠 单字主键 {tag}：'{k}'")
                 if parse_regex_from_string(k) is not None:
                     issues.append(f"🟠 正则形状主键 {tag}：{k}（会被当正则跑）")
-                key_owner.setdefault(k, set()).add(name)
+                key_owner.setdefault(k, []).append((name, filter_scope(e)))
             if e["order"] is None:
                 issues.append(f"🔴 缺 insertion_order {tag} → 引擎拿到 undefined")
             top_pos = e["raw"].get("position")
@@ -366,19 +429,69 @@ def cmd_check(args):
         print(f"  {mark} {name:<18} {len(ents)} 条 / {tok} token")
         for i in issues:
             print(f"        {i}")
-        rows.append((name, len(ents), tok))
+        groups, eff = {}, None
+        for e in ents:
+            ns = (e.get("filter") or {}).get("names") or []
+            g = "、".join(ns) if ns else None            # None = 不过滤（全体）
+            a, b = groups.get(g, (0, 0))
+            groups[g] = (a + 1, b + token_count(e["content"]))
+        filt = {k: v for k, v in groups.items() if k}
+        open_n, open_tok = groups.get(None, (0, 0))
+        if filt:
+            msg = (f"⚪ characterFilter 分流 {len(filt)} 组：单卡最大 "
+                   f"{max(a for a, _ in filt.values())} 条 / {max(b for _, b in filt.values())} token")
+            if open_n:
+                msg += f"；另有 {open_n} 条不分流 / {open_tok} token（按各自主键命中）"
+            print(f"        {msg}。整册合计 {tok} 不代表单卡注入")
+            eff = -1 if open_n else max(b for _, b in filt.values())
+        rows.append((name, len(ents), tok, eff))
         problems += sum(1 for i in issues if i.startswith("🔴"))
-    collide = {k: v for k, v in key_owner.items() if len(v) > 1}
+    collide = {}
+    for k, uses in key_owner.items():
+        if len(uses) < 2:
+            continue
+        # 分流隔离的不算撞车：只有 scope 有交集的两条才会同场触发
+        if any(scope_overlap(uses[i][1], uses[j][1])
+               for i in range(len(uses)) for j in range(i + 1, len(uses))):
+            collide[k] = uses
     if collide:
-        print(f"\n  ⚠️ 跨卡撞车主键 {len(collide)} 个：")
+        print(f"\n  ⚠️ 真撞车主键 {len(collide)} 个（分流隔离的不计）：")
         for k, v in sorted(collide.items(), key=lambda kv: -len(kv[1]))[:15]:
-            print(f"        {k:<12} → {'、'.join(sorted(v))}")
+            print(f"        {k:<12} → " + "、".join(f"{n}→{scope_label(s)}" for n, s in v))
+    # characterFilter 断链：names 用了 avatar 文件名去扩展名，卡改名即断链
+    scopes = {}
+    for p in args.cards:
+        for e in entries_of(p):
+            cf = e.get("filter") or {}
+            for n in (cf.get("names") or []):
+                scopes.setdefault(str(n), []).append(f"{os.path.basename(p)}#{e['uid']}")
+    if scopes:
+        cdir = getattr(args, "card_dir", None)
+        if not cdir:
+            print(f"\n  ⚪ characterFilter 用到 {len(scopes)} 个卡名：{'、'.join(sorted(scopes))}"
+                  f"（给 `--card-dir 卡库目录` 才做断链校验）")
+        else:
+            avail = {os.path.splitext(f)[0] for f in os.listdir(cdir) if f.endswith(".json")}
+            missing = sorted(n for n in scopes if n not in avail)
+            if missing:
+                problems += len(missing)
+                print(f"\n  🔴 characterFilter 断链 {len(missing)} 个："
+                      + "、".join(f"{n}（被 {len(scopes[n])} 条引用）" for n in missing)
+                      + f"\n        卡库里没有这些名字 → 那些条目对谁都不生效（卡改名后要全线同步）")
+            else:
+                print(f"\n  ✅ characterFilter 断链校验通过：{len(scopes)} 个卡名都能在 {cdir} 找到")
     print(f"\n  预算口径：{G['budget_pct']}% × {G['max_context']} = {budget} token（单卡）")
     print(f"  {'文件':<18} {'条目':>4} {'条目合计 token':>14}   占预算")
-    for name, n, tok in rows:
-        pct = f"{tok / budget * 100:.0f}%"
-        warn = "  ⚠️ 全部触发会超预算（按 order 降序截断）" if tok > budget else ""
-        print(f"  {name:<18} {n:>4} {tok:>14}   {pct}{warn}")
+    for name, n, tok, eff in rows:
+        if eff is None:
+            basis, note, judge = tok, "", True
+        elif eff == -1:
+            basis, note, judge = tok, "  含 characterFilter 分流（单卡注入见 sim）", False
+        else:
+            basis, note, judge = eff, f"  分流后单卡最大 {eff}", True
+        pct = f"{basis / budget * 100:.0f}%"
+        warn = "  ⚠️ 超预算（按 order 降序截断）" if judge and basis > budget else ""
+        print(f"  {name:<18} {n:>4} {tok:>14}   {pct}{note}{warn}")
     print(f"  🔴 硬问题 {problems} 个")
     return 1 if problems else 0
 
@@ -539,6 +652,24 @@ def cmd_selftest(args):
     t("生成模板字段齐备",
       all(k in WI_TEMPLATE for k in ("key", "keysecondary", "role", "sticky", "triggers", "position")), True)
 
+    # ⑧ characterFilter 分流（names = avatar 文件名去扩展名）
+    t("分流-名单内放行", filter_allows({"isExclude": False, "names": ["卡甲"], "tags": []}, "卡甲"), True)
+    t("分流-名单外拦掉", filter_allows({"isExclude": False, "names": ["卡甲"], "tags": []}, "卡乙"), False)
+    t("分流-排除式命中", filter_allows({"isExclude": True, "names": ["卡甲"], "tags": []}, "卡甲"), False)
+    t("分流-排除式未命中", filter_allows({"isExclude": True, "names": ["卡甲"], "tags": []}, "卡乙"), True)
+    t("分流-空名单=全体", filter_allows({"isExclude": False, "names": [], "tags": []}, "谁"), True)
+    t("分流-按标签", filter_allows({"isExclude": False, "names": [], "tags": ["示例标签"]}, "谁", ["示例标签"]), True)
+    t("分流-无 filter 字段", filter_allows(None, "谁"), True)
+
+    # ⑨ 分流范围与撞车判定（同键分流到不同卡 ≠ 撞车）
+    t("scope-无 filter = 全体", filter_scope({"key": ["x"]}), None)
+    t("scope-名单", filter_scope({"characterFilter": {"names": ["卡甲"], "tags": []}}), {"卡甲"})
+    t("scope-标签写成 tag:", filter_scope({"characterFilter": {"names": [], "tags": ["示例标签"]}}), {"tag:示例标签"})
+    t("撞车-同名异卡 → 不撞", scope_overlap({"卡甲"}, {"卡乙"}), False)
+    t("撞车-同名同卡 → 撞", scope_overlap({"卡甲"}, {"卡甲"}), True)
+    t("撞车-全体 vs 分流 → 撞", scope_overlap(None, {"卡乙"}), True)
+    t("scope 标签", scope_label(None), "全体")
+
     if failed:
         print(f"❌ 自测 {passed} 通过 / {len(failed)} 失败")
         for f in failed:
@@ -558,6 +689,9 @@ def _sim_one(path, label, msgs, char_name, user_name, include_names, depth, budg
         return 0
     fired, blocked, miss = [], [], []
     for e in ents:
+        if not filter_allows(e.get("filter"), G.get("char_key"), G.get("char_tags") or ()):
+            miss.append((e, "filtered"))
+            continue
         d = e["scan_depth"] if e["scan_depth"] is not None else depth
         text = scan_text(msgs, d, char_name, user_name, include_names)
         verdict, detail = evaluate_entry(e, text, char_name, user_name)
@@ -582,7 +716,8 @@ def _sim_one(path, label, msgs, char_name, user_name, include_names, depth, budg
     if miss:
         print(f"\n── 未触发 {len(miss)} 条 ──")
         for e, v in miss:
-            why = {"no-primary": "主键没出现", "no-keys": "没写主键", "disabled": "已禁用"}.get(v, v)
+            why = {"no-primary": "主键没出现", "no-keys": "没写主键", "disabled": "已禁用",
+                   "filtered": "characterFilter 不符（这张卡不在分流名单内）"}.get(v, v)
             print(f"   ·  [{e['uid']:>3}] {e['comment'][:20]:<22} {why}")
     total = sum(token_count(e["content"]) for e, _, _ in fired)
     print("\n　注入顺序（弱→强，按 position 分组 / order 升序）：")
@@ -600,6 +735,8 @@ def cmd_sim(args):
     G["max_context"] = args.max_context
     kind, _book, card = load_book(args.card)
     data = (card or {}).get("data") or {}
+    G["char_key"] = os.path.splitext(os.path.basename(args.card))[0]   # avatar 文件名去扩展名
+    G["char_tags"] = list(data.get("tags") or [])
     char_name = args.char_name or data.get("name") or "{{char}}"
     user_name = args.user_name or "{{user}}"
     include_names = not args.no_names
@@ -642,9 +779,11 @@ WI_TEMPLATE = {
 
 
 def cmd_new(args):
-    """从条目清单（JSON）生成独立世界书文件。"""
-    spec = load(args.spec)
-    items = spec.get("entries") or []
+    """从条目清单（JSON，可多份分层拼接）生成独立世界书文件。"""
+    specs = list(args.spec) if isinstance(args.spec, list) else [args.spec]
+    items = []
+    for s in specs:
+        items.extend((load(s).get("entries") or []))
     out = {"entries": {}}
     for i, sp in enumerate(items):
         e = dict(WI_TEMPLATE)
@@ -671,7 +810,7 @@ def cmd_new(args):
                                     "tags": list(cf.get("tags") or [])}
         out["entries"][str(i)] = e
 
-    dst = args.out or (os.path.splitext(args.spec)[0] + ".json")
+    dst = args.out or (os.path.splitext(specs[0])[0] + ".json")
     with open(dst, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, indent=2)
 
@@ -701,6 +840,7 @@ def main():
     p = sp.add_parser("check", help="触发体检")
     p.add_argument("cards", nargs="+")
     p.add_argument("--max-context", type=int, default=G["max_context"])
+    p.add_argument("--card-dir", help="卡库目录：校验 characterFilter.names 有没有断链")
     p.set_defaults(func=cmd_check, all=False)
 
     p = sp.add_parser("sim", help="触发模拟")
@@ -714,8 +854,8 @@ def main():
     p.add_argument("--max-context", type=int, default=G["max_context"])
     p.set_defaults(func=cmd_sim)
 
-    p = sp.add_parser("new", help="从条目清单（JSON）生成独立世界书")
-    p.add_argument("spec")
+    p = sp.add_parser("new", help="从条目清单（JSON，可给多份分层拼接）生成独立世界书")
+    p.add_argument("spec", nargs="+", help="条目清单文件（可多份：分层维护、合并成一本）")
     p.add_argument("--out")
     p.set_defaults(func=cmd_new)
 

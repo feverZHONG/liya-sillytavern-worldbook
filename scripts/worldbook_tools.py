@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""worldbook_tools —— 世界书（character_book）机制引擎（SillyTavern 1.18.0 口径）
+"""worldbook_tools —— 世界书（character_book）机制引擎（SillyTavern 1.18.0 口径，1.19.0 复核一致）
 
 用法:
   worldbook_tools.py ls    <卡.json...>                      世界书台账（book 级 + 条目级）
@@ -689,7 +689,7 @@ def cmd_new(args):
 
 
 def main():
-    ap = argparse.ArgumentParser(prog="worldbook_tools", description="世界书机制引擎（ST 1.18.0 口径）")
+    ap = argparse.ArgumentParser(prog="worldbook_tools", description="世界书机制引擎（ST 1.18.0 口径；1.19.0 复核判定链未变）")
     sp = ap.add_subparsers(dest="cmd", required=True)
 
     p = sp.add_parser("ls", help="世界书台账"); p.add_argument("cards", nargs="+")

@@ -44,7 +44,7 @@ wb selftest                       # 判定链自测（改代码后必跑）
 1. **触发是四道门**：`constant/sticky` → 主键 → 二级键(`selective`) → 概率·包含组·预算。只看关键词会写废。
 2. **`selective` + `secondary_keys` 是强制门槛**（默认 AND_ANY = 主键且任一二级键）。想要「任一词触发」就别写 `secondary_keys`。
 3. **只用专有名词做键**。通用词（店长/老师/过进/责任/决定…）会撞角色名与用户名——名称默认参与扫描，等于常年误触发。
-4. **`order` 是全局排序键**：独立书与卡内书同时加载时，预算截断按 order 降序保留 → 共用书段位要压在卡内书之下（例：卡内 300-390，共用书 100-179）。
+4. **`order` 是全局排序键**：独立书与卡内书同时加载时，预算截断按 order 降序保留 → 共用书段位要压在卡内书之下（例：卡内 300-390，共用书 100-179）。手写书整理完可用官方 **Apply Current Sorting**（1.19 起支持起始值/步长/升降序，只动当前一本书）一把赋号——脚本生成的书别覆盖，详见机制文档 §13。
 5. **卡内 book 级 `scan_depth` / `token_budget` / `recursive_scanning` 引擎不读**，是摆设；要控就写条目级 `extensions`（卡侧）或让用户在酒馆设（独立书）。
 6. **递归默认关** → 条目内容里提到别的关键词不会连锁触发，可以放心互引名词。
 7. **世界书写设定，不写台词本**。台词归 `description` 的 Ali:Chat；世界书全写成对话 = 触发时像插播历史消息（v0.8 教训）。
@@ -88,8 +88,11 @@ tavern world --all --set my-world --fix   # 批量写入
 
 | 要查什么 | 打开 |
 |:---------|:-----|
-| 机制与触发条件（ST 1.18.0 源码实证，带行号） | `references/12-worldbook-mechanics.md` |
+| **机制主档**（1.19.0 源码实证，带行号）：调用链五层 / 判定链 / 匹配 / 扫描源 / 位置 / 预算 / 字段 / 伪代码 / CLI | `references/12-worldbook-mechanics.md` |
+| **机制附档**（非常规路径）：递归 / 包含组·outlet·向量化 / 角色过滤器 / 扫描状态机·时间效果 / 版本复核记录 | `references/12b-mechanics-advanced.md` |
+| **条目设计规范**（动笔前读：靠什么进 / 放哪 / 要不要恒在场 + 硬判据 + 实测记录；**§六 关系层两套架构**＝A 卡内书〔单卡面〕／B 独立关系书〔成套〕，按分发形态选） | `references/13-entry-design.md` |
 | 引擎实现（判定链 / 模拟器 / 生成器 / 自测） | `scripts/worldbook_tools.py` |
+| **上游发新版后复核机制**（一条命令出差异判定） | `scripts/st-version-diff.py --tag-a X --tag-b Y` |
 | 卡内书的字段位置与写卡侧 | `sillytavern-cards` skill |
 | 卡库台账与精修流程 | `tavern-card-refinement` skill |
 

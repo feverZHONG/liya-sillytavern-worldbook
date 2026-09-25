@@ -372,6 +372,22 @@ def cmd_keys(args):
     return 0
 
 
+def per_card_totals(ents):
+    """单卡注入量：按**卡**累加。同一张卡可以同时落在多个 `characterFilter` 分流组里
+    （例：既在「5 人知情组」又在「受害链组」）→ 取组的最大值会低估。
+    tag 类无法枚举成员 → 当伪卡 `tag:xxx` 单列（宁可高估，不可低估）。"""
+    per_card = {}
+    for e in ents:
+        f = e.get("filter") or {}
+        keys = [str(x).strip() for x in (f.get("names") or [])]
+        if not keys:
+            keys = ["tag:" + str(x).strip() for x in (f.get("tags") or [])]
+        for c in keys:
+            a, b = per_card.get(c, (0, 0))
+            per_card[c] = (a + 1, b + token_count(e["content"]))
+    return per_card
+
+
 def cmd_check(args):
     G["max_context"] = args.max_context
     budget = int(round(G["budget_pct"] * G["max_context"] / 100)) or 1
@@ -435,15 +451,23 @@ def cmd_check(args):
             g = "、".join(ns) if ns else None            # None = 不过滤（全体）
             a, b = groups.get(g, (0, 0))
             groups[g] = (a + 1, b + token_count(e["content"]))
+        # 单卡实际注入必须按卡累加（见 per_card_totals）
+        per_card = per_card_totals(ents)
         filt = {k: v for k, v in groups.items() if k}
         open_n, open_tok = groups.get(None, (0, 0))
         if filt:
-            msg = (f"⚪ characterFilter 分流 {len(filt)} 组：单卡最大 "
-                   f"{max(a for a, _ in filt.values())} 条 / {max(b for _, b in filt.values())} token")
+            if per_card:
+                top_card, (top_n, top_tok) = max(per_card.items(), key=lambda kv: kv[1][1])
+                msg = (f"⚪ characterFilter 分流 {len(filt)} 组：单卡最大 "
+                       f"{top_n} 条 / {top_tok} token（{top_card}）")
+            else:
+                msg = (f"⚪ characterFilter 分流 {len(filt)} 组：单卡最大 "
+                       f"{max(a for a, _ in filt.values())} 条 / {max(b for _, b in filt.values())} token")
             if open_n:
                 msg += f"；另有 {open_n} 条不分流 / {open_tok} token（按各自主键命中）"
             print(f"        {msg}。整册合计 {tok} 不代表单卡注入")
-            eff = -1 if open_n else max(b for _, b in filt.values())
+            eff = -1 if open_n else max((b for _, b in per_card.values()),
+                                        default=max(b for _, b in filt.values()))
         rows.append((name, len(ents), tok, eff))
         problems += sum(1 for i in issues if i.startswith("🔴"))
     collide = {}
@@ -630,6 +654,23 @@ def cmd_selftest(args):
     t("depth=2 只含最近两条", "第一条" not in scan_text(msgs, 2, "角色", "用户"), True)
     t("名称前缀默认带", "角色: 第二条" in scan_text(msgs, 3, "角色", "用户"), True)
     t("关掉名称前缀", ": " not in scan_text(msgs, 1, include_names=False), True)
+
+    # ⑧ 单卡注入按卡累加（同一卡落多个分流组时，取组最大值会低估）
+    def _wi(uid, names, content):
+        return normalize({"uid": uid, "key": [f"k{uid}"], "content": content, "order": 1,
+                          "position": 0, "disable": False,
+                          "characterFilter": {"isExclude": False, "names": names, "tags": []}})
+    pc = per_card_totals([_wi(0, ["卡甲"], "一二三四五"),
+                          _wi(1, ["卡甲", "卡乙"], "一二三四五")])
+    t("单卡累加：卡甲跨两组 = 2 条", pc["卡甲"][0], 2)
+    t("单卡累加：卡乙 = 1 条", pc["卡乙"][0], 1)
+    t("单卡累加：token 是两条之和", pc["卡甲"][1] > pc["卡乙"][1], True)
+    pc2 = per_card_totals([normalize({"uid": 0, "key": ["k"], "content": "x", "order": 1, "position": 0,
+                                      "disable": False,
+                                      "characterFilter": {"isExclude": False, "names": [], "tags": ["标签甲"]}})])
+    t("tag 分流当伪卡单列", list(pc2), ["tag:标签甲"])
+    t("不过滤的条目不进单卡账", per_card_totals([normalize({"uid": 0, "key": ["k"], "content": "x",
+                                                            "order": 1, "position": 0, "disable": False})]), {})
 
     # ⑦ 独立世界书形状（驼峰字段）与卡侧形状解析等价
     wi = {"uid": 5, "key": ["示例键"], "keysecondary": [], "comment": "示例键", "content": "xx",

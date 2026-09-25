@@ -58,6 +58,13 @@ if (entry.characterFilter?.tags?.length > 0) { … }
 
 ⚠️ `names` 用的是 **avatar 文件名去扩展名**（`getCharaFilename` = `avatar.replace(/\.[^/.]+$/, '')`）——**改名即断**，与 `extensions.world` 同属脆弱约定，改名要全线同步。
 
+**求值时机：在条目循环最前**——`disable`／生成类型 `triggers` 之后，`sticky`／`delay`／`@@activate`／`constant` 之前（1.19.0 :4809-4836 逐行）。
+→ 推论：**常驻条目同样受限知情名单**，「限知情」不会被 constant 绕开。
+
+⚠️ **群聊里按「当前发言成员」判，不是按「群」**（2026-09-25 实测，`group-chats.js`）：群聊生成是**逐成员轮转**——每个成员 `Generate()` 之前先 `setCharacterId(chId)`（`:1054`），整轮循环跑完才归 `undefined`（`:1080`）。
+所以群聊里 `getCharaFilename()` **不是 null**，而是「这轮发言的那个人」→ names 过滤在群聊里**照常生效**：非知情成员的轮次里条目不进，知情成员的轮次里照常进。
+**踩过的误判**：只看 `openGroupById` 里的 `setCharacterId(undefined)`（`:2034`）会得出「群聊里 names 过滤全灭」的错结论——**要连着生成循环一起读**才看得到 :1054 那一跳。
+
 → 这既是「共用世界书走独立文件 + `extensions.world` 关联」的硬理由，也让「**一本关系书按角色分流**」成为可能（架构对比见 `13-entry-design.md` §五）。
 
 ## 3. 扫描状态机 · 时间效果 · 外部注入

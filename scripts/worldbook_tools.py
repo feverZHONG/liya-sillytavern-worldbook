@@ -859,8 +859,9 @@ def cmd_new(args):
     tok = sum(token_count(sp.get("content") or "") for sp in items)
     print(f"✅ 生成 {dst}")
     print(f"   条目 {len(items)}  常驻 {sum(1 for sp in items if sp.get('constant'))}  token 合计 {tok}")
-    print(f"   16 张卡写：extensions.world = {stem!r}"
+    print(f"   要用它：给卡的 data.extensions.world 写 {stem!r}"
           f"{'  ⚠️ 含非 ASCII 字符，导入后可能变乱码、关联断链' if not stem.isascii() else ''}")
+    print("   ⚠️ 这只是提示，没动任何卡——生成后回读卡目录（git status）确认")
     bad = sorted({k for sp in items for k in (sp.get("keys") or sp.get("key") or [])
                   if k in GENERIC_KEYS or len(k) < 2})
     if bad:

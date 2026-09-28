@@ -115,6 +115,9 @@ tavern world --all --set my-world --fix   # 批量写入
 
 ## 八、踩坑
 
+- **「整本一个条目都不显示」多半不是格式，是书没到位＋缓存把空书钉住了**（2026-09-27 实踩自家书）：`/api/worldinfo/get` 走 `readWorldInfoFile(…, allowDummy=true)`——**文件不在或名字对不上时不报错**，静默返回空书 `{entries:{}}`；`loadWorldInfo` 又**按书名缓存**这份空书（`worldInfoCache`），所以之后把书放到位也不会自己回来，**要刷新页面/重开酒馆**（删除那本书也会清掉缓存）。排障三步：① F12 控制台看 `World info file xxx.json doesn't exist`（那行就是酒馆在找的名字）② 世界书下拉里的书名 vs 卡里 `extensions.world` ③ 刷新一次。**根因仍是「卡只存文件名」**：卡与书是两件东西，文件名必须逐字一致（ASCII）、书必须在 `data/<用户>/worlds/`。
+  渲染链本身很宽容（`addMissingWorldInfoFields` 把缺的字段自动补、`key`/`keysecondary` 非数组修成空数组、`entry.uid` 查不到才跳过）——**不要先怀疑自己生成的 JSON**；先证「酒馆读到的到底是不是这本」。
+
 - **卡本体 ≠ 只看顶层字段**：PList 在 `data.extensions.depth_prompt.prompt`（`data.depth_prompt` 是空格），`personality`／`scenario`／`mes_example` 生来就是空的（内容进了 PList 与 description）。做四道闸减法（闸①「卡本体已经写了吗」）之前**必须先读 PList**——不然会把「已写」误判成「没写」，反过来把重复内容写进世界书。
 - **卡内书 book 级必带 `extensions: {}`**：V2 规范要求 `character_book` 同时有 `extensions`（对象）与 `entries`（数组）。新建卡内书只写 `entries` 会让官方 validator 判 `data.character_book.extensions/entries` 失败——`tavern verify` 一跑就抓（踩过）。
 - **单字／通用词键要拿真句子试**：`唯` 会撞「唯一」、`姐姐`／`母亲`／`父亲` 会撞任何家庭话题——`wb sim <卡> "句子"` 实测再定；本体角色名当键＝隐性常驻（扫描区每轮带「名字: 」前缀），见 §三 硬判据 1。

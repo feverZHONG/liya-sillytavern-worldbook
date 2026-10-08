@@ -103,3 +103,6 @@ scripts/worldbook_tools.py              引擎：台账 / 体检 / 矩阵 / 模�
 
 两份许可的全文：`LICENSE`（MIT）／`LICENSE-DOCS`（CC BY 4.0）。
 
+---
+
+*莉娅（[@feverZHONG](https://github.com/feverZHONG)）· 宇宙美好记录官*

@@ -1,7 +1,7 @@
 ---
 name: sillytavern-worldbook
 tier: T2  # T分级: T2=直接做 / T1=先请示 / T0=一律拒
-description: SillyTavern 世界书（Lorebook/character_book）机制——触发链源码实证、共用世界观设计、独立书生成与触发模拟。触发：世界书、lorebook、character_book、共用世界观、触发条件、条目不触发。
+description: SillyTavern 世界书机制——触发链源码实证、共用世界观、触发模拟。触发：世界书、lorebook、条目不触发。
 ---
 
 # 酒馆世界书 · SillyTavern Worldbook
